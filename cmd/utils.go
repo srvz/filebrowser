@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -222,4 +223,70 @@ func convertCmdStrToCmdArray(cmd string) []string {
 		cmdArray = strings.Split(trimmedCmdStr, " ")
 	}
 	return cmdArray
+}
+
+// localLANIPv4s returns a list of non-loopback private IPv4 addresses on this host.
+// If none are found, it falls back to any non-loopback IPv4 addresses.
+func localLANIPv4s() []string {
+	var (
+		private  []string
+		fallback []string
+	)
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+
+	for _, iface := range ifaces {
+		if (iface.Flags&net.FlagUp) == 0 || (iface.Flags&net.FlagLoopback) != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue // skip IPv6 for brevity
+			}
+			if isPrivateIPv4(ip) {
+				private = append(private, ip.String())
+			} else {
+				fallback = append(fallback, ip.String())
+			}
+		}
+	}
+
+	if len(private) > 0 {
+		return private
+	}
+	return fallback
+}
+
+func isPrivateIPv4(ip net.IP) bool {
+	// 10.0.0.0/8
+	if ip[0] == 10 {
+		return true
+	}
+	// 172.16.0.0/12
+	if ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31 {
+		return true
+	}
+	// 192.168.0.0/16
+	if ip[0] == 192 && ip[1] == 168 {
+		return true
+	}
+	return false
 }

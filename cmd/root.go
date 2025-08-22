@@ -205,13 +205,23 @@ user created with the credentials from options "username" and "password".`,
 		if err != nil {
 			return err
 		}
+		mux := http.NewServeMux()
+		extraPaths := v.GetStringMap("extra_paths")
+		for k, v := range extraPaths {
+			mux.Handle(k, http.StripPrefix(k, http.FileServer(http.Dir(v.(string)))))
+		}
+		mux.Handle("/", handler)
 
 		defer listener.Close()
 
 		log.Println("Listening on", listener.Addr().String())
 		srv := &http.Server{
-			Handler:           handler,
+			Handler:           mux,
 			ReadHeaderTimeout: 60 * time.Second,
+		}
+
+		for _, ip := range localLANIPv4s() {
+			log.Printf("Open http://%s:%s%s", ip, server.Port, server.BaseURL)
 		}
 
 		go func() {
